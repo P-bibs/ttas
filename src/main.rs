@@ -1,5 +1,6 @@
 use plotters::prelude::*;
-use std::sync::{atomic::AtomicUsize, Arc, Barrier};
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Barrier};
 use std::time::{Duration, Instant};
 
 fn main() {
@@ -9,7 +10,7 @@ fn main() {
 
     // a lambda to run a locking experiment many times across different thread counts and
     // accumulates the results
-    let collect_samples = |func: fn(&AtomicUsize, usize)| {
+    let collect_samples = |func: fn(&AtomicBool)| {
         thread_counts
             .iter()
             .map(|thread_count| {
@@ -102,19 +103,19 @@ fn line_plot(durations1: Vec<(usize, Vec<Duration>)>, durations2: Vec<(usize, Ve
 }
 
 /// runs a lock function on a given number of threads and returns the duration
-fn run_experiment(func: fn(&AtomicUsize, usize), thread_count: usize) -> Duration {
-    let lock = AtomicUsize::new(0);
-    let lock: &'static AtomicUsize = Box::leak(Box::new(lock));
+fn run_experiment(func: fn(&AtomicBool), thread_count: usize) -> Duration {
+    let lock = AtomicBool::new(false);
+    let lock: &'static _ = Box::leak(Box::new(lock));
 
     let barrier = Arc::new(Barrier::new(thread_count + 1));
 
     let threads: Vec<_> = (0..thread_count)
-        .map(|i| {
+        .map(|_| {
             let barrier = Arc::clone(&barrier);
             let lock = lock;
             std::thread::spawn(move || {
                 barrier.wait();
-                func(lock, i);
+                func(lock);
             })
         })
         .collect();
@@ -130,33 +131,14 @@ fn run_experiment(func: fn(&AtomicUsize, usize), thread_count: usize) -> Duratio
     return elapsed;
 }
 
-fn ttas(lock: &AtomicUsize, id: usize) {
+fn ttas(lock: &AtomicBool) {
     // acquire lock
     loop {
-        if lock.load(std::sync::atomic::Ordering::Relaxed) == 0 {
-            if let Ok(_) = lock.compare_exchange(
-                0,
-                id,
-                std::sync::atomic::Ordering::SeqCst,
-                std::sync::atomic::Ordering::SeqCst,
-            ) {
-                break;
-            }
-        }
-    }
+        while lock.load(std::sync::atomic::Ordering::Acquire) {}
 
-    // ... do work
-
-    // release lock
-    lock.store(0, std::sync::atomic::Ordering::SeqCst);
-}
-
-fn tas(lock: &AtomicUsize, id: usize) {
-    // acquire lock
-    loop {
         if let Ok(_) = lock.compare_exchange(
-            0,
-            id,
+            false,
+            true,
             std::sync::atomic::Ordering::SeqCst,
             std::sync::atomic::Ordering::SeqCst,
         ) {
@@ -167,5 +149,24 @@ fn tas(lock: &AtomicUsize, id: usize) {
     // ... do work
 
     // release lock
-    lock.store(0, std::sync::atomic::Ordering::SeqCst);
+    lock.store(false, std::sync::atomic::Ordering::SeqCst);
+}
+
+fn tas(lock: &AtomicBool) {
+    // acquire lock
+    loop {
+        if let Ok(_) = lock.compare_exchange(
+            false,
+            true,
+            std::sync::atomic::Ordering::SeqCst,
+            std::sync::atomic::Ordering::SeqCst,
+        ) {
+            break;
+        }
+    }
+
+    // ... do work
+
+    // release lock
+    lock.store(false, std::sync::atomic::Ordering::SeqCst);
 }
