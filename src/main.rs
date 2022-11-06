@@ -45,14 +45,18 @@ fn line_plot(durations1: Vec<(usize, Vec<Duration>)>, durations2: Vec<(usize, Ve
     let data1 = make_data(durations1);
     let data2 = make_data(durations2);
 
-    let out_file_name = "plotters-doc-data/normal-dist.png";
+    let out_file_name = "plots/ttas.png";
 
-    let root = BitMapBackend::new(out_file_name, (1024*2, 768*2)).into_drawing_area();
+    let root = BitMapBackend::new(out_file_name, (1024, 768)).into_drawing_area();
     root.fill(&WHITE).unwrap();
 
-    let areas = root.split_by_breakpoints([944*2], [80*2]);
+    let areas = root.split_by_breakpoints([944], [80]);
 
     let mut scatter_ctx = ChartBuilder::on(&areas[2])
+        .caption(
+            "Execution time vs. thread count",
+            ("sans-serif", 50).into_font(),
+        )
         .x_label_area_size(80)
         .y_label_area_size(80)
         .build_cartesian_2d(0f64..1000f64, (0f64..20_000_000f64).log_scale())
@@ -61,6 +65,8 @@ fn line_plot(durations1: Vec<(usize, Vec<Duration>)>, durations2: Vec<(usize, Ve
         .configure_mesh()
         .disable_x_mesh()
         .disable_y_mesh()
+        .y_desc("Execution time (ns)")
+        .x_desc("Thread count")
         .draw()
         .unwrap();
 
@@ -70,17 +76,28 @@ fn line_plot(durations1: Vec<(usize, Vec<Duration>)>, durations2: Vec<(usize, Ve
                 .iter()
                 .map(|(x, y)| Circle::new((*x, *y), 3, GREEN.stroke_width(1))),
         )
-        .unwrap();
+        .unwrap()
+        .label("y = x^2")
+        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &RED));
+
     scatter_ctx
         .draw_series(
             data2
                 .iter()
                 .map(|(x, y)| Circle::new((*x, *y), 3, RED.stroke_width(1))),
         )
-        .unwrap();
+        .unwrap()
+        .label("y = x^2")
+        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &RED));
 
     // To avoid the IO failure being ignored silently, we manually call the present function
-    root.present().expect("Unable to write result to file, please make sure 'plotters-doc-data' dir exists under current dir");
+    root.present().expect(
+        format!(
+            "Unable to write result to file, please make sure '{}' dir exists under current dir",
+            out_file_name
+        )
+        .as_str(),
+    );
     println!("Result has been saved to {}", out_file_name);
 }
 
